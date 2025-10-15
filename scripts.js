@@ -1,19 +1,34 @@
-// scripts.js - full runnable file with globals exposed and debug logs
+// Full updated scripts.js
 (function () {
   'use strict';
 
-  // --- CONFIG: set these to your deployed Workers ---
-  var ENDPOINT_URL = 'https://csesponsors.sbecerr7.workers.dev/'; // POST submissions
-  var DATA_LOADER_URL = 'https://data-loader.sbecerr7.workers.dev/'; // read student/project data
+  // --- Configuration (Cloudflare Workers endpoints) ---
+  var ENDPOINT_URL = 'https://online-worker.sbecerr7.workers.dev/';  // POST submissions here
+  var DATA_LOADER_URL = 'https://data-loader.sbecerr7.workers.dev/';     // GET sponsor/project data here
   var STORAGE_KEY = 'sponsor_progress_v1';
 
-  // --- RUBRIC ---
+  // --- RUBRIC (5 items) ---
   var RUBRIC = [
-    { title: "Effort", description: "Development effort should be balanced between all team members; student should commit to a fair amount of development effort on each sprint." },
-    { title: "Meetings", description: "Students are expected to be proactive. Contributions and participation in meetings help ensure the student is aware of project goals." },
-    { title: "Understanding", description: "Students are expected to understand important details of the project and be able to explain it from different stakeholder perspectives." },
-    { title: "Quality", description: "Students should complete assigned work to a high quality: correct, documented, and self-explanatory where appropriate." },
-    { title: "communitcation", description: "Students are expected to be in regular communication and maintain professionalism when interacting with the sponsor." }
+    {
+      title: "Student has contributed an appropriate amount of development effort towards this project",
+      description: "Development effort should be balanced between all team members; student should commit to a fair amount of development effort on each sprint."
+    },
+    {
+      title: "Student's level of contribution and participation in meetings",
+      description: "Students are expected to be proactive. Contributions and participation in meetings help ensure the student is aware of project goals."
+    },
+    {
+      title: "Student's understanding of your project/problem",
+      description: "Students are expected to understand important details of the project and be able to explain it from different stakeholder perspectives."
+    },
+    {
+      title: "Quality of student's work product",
+      description: "Students should complete assigned work to a high quality: correct, documented, and self-explanatory where appropriate."
+    },
+    {
+      title: "Quality and frequency of student's communications",
+      description: "Students are expected to be in regular communication and maintain professionalism when interacting with the sponsor."
+    }
   ];
 
   // --- DOM nodes ---
@@ -29,6 +44,7 @@
   var formStatus = document.getElementById('form-status');
   var submitProjectBtn = document.getElementById('submitProject');
   var finishStartOverBtn = document.getElementById('finishStartOver');
+  var welcomeBlock = document.getElementById('welcome-block');
   var underTitle = document.getElementById('under-title');
 
   // --- State ---
@@ -46,36 +62,18 @@
     formStatus.textContent = msg || '';
     formStatus.style.color = color || '';
   }
+
   function escapeHtml(s) {
     var map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
     return String(s || '').replace(/[&<>"']/g, function (m) { return map[m]; });
   }
 
-  // Normalize rows from data-loader to array of objects
-  function parseRowsFromLoader(json) {
-    if (!json) return [];
-    if (Array.isArray(json)) return json;
-    // handle case where worker returned { values: [...] } (sheet API style)
-    if (json.values && Array.isArray(json.values)) {
-      var rows = json.values;
-      var headers = (rows[0]||[]).map(h => String(h||'').trim());
-      return rows.slice(1).map(r => {
-        var obj = {};
-        headers.forEach(function(h,i){ obj[h] = r[i] || ''; });
-        return obj;
-      });
-    }
-    // if it returned { data: [...] } or similar:
-    if (Array.isArray(json.data)) return json.data;
-    return [];
-  }
-
   function buildSponsorMap(rows) {
     var map = {};
     rows.forEach(function (r) {
-      var email = (r.sponsorEmail || r.email || r.SponsorEmail || r.Email || '').toString().toLowerCase().trim();
-      var project = (r.project || r.Project || r.projectName || '').toString().trim();
-      var student = (r.student || r.Student || r.studentName || '').toString().trim();
+      var email = (r.sponsorEmail || r.email || '').toLowerCase();
+      var project = (r.project || '').trim();
+      var student = (r.student || '').trim();
       if (!email || !project || !student) return;
       if (!map[email]) map[email] = { projects: {} };
       if (!map[email].projects[project]) map[email].projects[project] = [];
@@ -87,15 +85,25 @@
   }
 
   function saveProgress() {
-    var payload = { name: currentName, email: currentEmail, completedProjects: completedProjects, stagedRatings: stagedRatings };
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(payload)); } catch (e) { console.warn('Could not save progress', e); }
+    var payload = {
+      name: currentName,
+      email: currentEmail,
+      completedProjects: completedProjects,
+      stagedRatings: stagedRatings
+    };
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    } catch (e) {
+      console.warn('Could not save progress', e);
+    }
   }
+
   function loadProgress() {
     try {
       var raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       var obj = JSON.parse(raw);
-      if (obj) {
+      if (obj && obj.email) {
         currentName = obj.name || '';
         currentEmail = obj.email || '';
         completedProjects = obj.completedProjects || {};
@@ -103,7 +111,9 @@
         if (nameInput) nameInput.value = currentName;
         if (emailInput) emailInput.value = currentEmail;
       }
-    } catch (e) { console.warn('Could not load progress', e); }
+    } catch (e) {
+      console.warn('Could not load progress', e);
+    }
   }
 
   // -------------------------
@@ -146,7 +156,6 @@
         var act = projectListEl.querySelectorAll('.project-item.active');
         for (var ai = 0; ai < act.length; ai++) act[ai].classList.remove('active');
         li.classList.add('active');
-        // This call must be available globally if HTML calls it directly.
         loadProjectIntoMatrix(p, entry.projects[p]);
         setStatus('');
       });
@@ -158,23 +167,23 @@
     setStatus('');
   }
 
-  // -------------------------
-  // Render matrix for a project
+    // -------------------------
+  // Render matrix for a project (stacked rubric; each criterion in its own card)
   // -------------------------
   function loadProjectIntoMatrix(projectName, students) {
-    console.log('loadProjectIntoMatrix called:', projectName, students);
     currentProject = projectName;
     if (!matrixContainer) return;
 
-    // cleanup old
+    // Remove any previously injected matrix-info to avoid duplicates
     var oldInfo = document.getElementById('matrix-info');
     if (oldInfo && oldInfo.parentNode) oldInfo.parentNode.removeChild(oldInfo);
 
+    // clear previous matrices and comments
     matrixContainer.innerHTML = '';
     var oldComment = document.querySelector('.section.section-comment');
     if (oldComment && oldComment.parentNode) oldComment.parentNode.removeChild(oldComment);
 
-    // header
+    // create (or re-create) matrix-info and place it right before matrixContainer if possible
     var info = document.createElement('div');
     info.id = 'matrix-info';
     var hdr = document.createElement('div');
@@ -191,27 +200,39 @@
     topDesc.style.fontWeight = '400';
     topDesc.style.fontSize = '14px';
     topDesc.style.marginBottom = '12px';
+
     info.appendChild(hdr);
     info.appendChild(topDesc);
-    if (matrixContainer.parentNode) matrixContainer.parentNode.insertBefore(info, matrixContainer);
-    else document.body.insertBefore(info, matrixContainer);
 
+    if (matrixContainer.parentNode) {
+      matrixContainer.parentNode.insertBefore(info, matrixContainer);
+    } else {
+      document.body.insertBefore(info, matrixContainer);
+    }
+
+    // defensive: if no students, show message and exit
     if (!students || !students.length) {
       matrixContainer.textContent = 'No students found for this project.';
       return;
     }
 
+    // Restore staged ratings for this project if existing
     if (!stagedRatings[currentProject]) stagedRatings[currentProject] = {};
 
+    // Build each criterion block stacked — each inside its own .card
     RUBRIC.forEach(function (crit, cIdx) {
+      // outer card wrapper (use existing .card class)
       var card = document.createElement('div');
       card.className = 'card matrix-card';
       card.style.marginBottom = '20px';
+      // give a default padding if card has none via css
       card.style.padding = card.style.padding || '18px';
 
+      // inside card: container for the criterion
       var critWrap = document.createElement('div');
       critWrap.className = 'matrix-criterion';
 
+      // Title
       var critTitle = document.createElement('h4');
       critTitle.className = 'matrix-criterion-title';
       critTitle.textContent = (cIdx + 1) + '. ' + (crit.title || '');
@@ -219,20 +240,23 @@
       critTitle.style.fontWeight = '600';
       critWrap.appendChild(critTitle);
 
+      // Description — force inline styles to ensure it shows and is not bold
       var critDesc = document.createElement('div');
       critDesc.className = 'matrix-criterion-desc';
       critDesc.textContent = crit.description || '';
       critDesc.style.display = 'block';
       critDesc.style.color = '#0b1228';
-      critDesc.style.fontWeight = '400';
+      critDesc.style.fontWeight = '400'; // normal
       critDesc.style.fontSize = '14px';
       critDesc.style.lineHeight = '1.3';
       critDesc.style.margin = '0 0 12px 0';
       critWrap.appendChild(critDesc);
 
+      // Table
       var table = document.createElement('table');
       table.className = 'matrix-table';
       table.style.width = '100%';
+      table.style.borderCollapse = 'collapse';
       var thead = document.createElement('thead');
       var trHead = document.createElement('tr');
 
@@ -242,6 +266,7 @@
       thName.style.padding = '8px';
       trHead.appendChild(thName);
 
+      // columns 1..7
       for (var k = 1; k <= 7; k++) {
         var th = document.createElement('th');
         th.textContent = String(k);
@@ -254,8 +279,10 @@
 
       var tbody = document.createElement('tbody');
 
+      // build rows for students
       students.forEach(function (studentName, sIdx) {
         var tr = document.createElement('tr');
+
         var tdName = document.createElement('td');
         tdName.textContent = studentName;
         tdName.style.padding = '8px 10px';
@@ -273,6 +300,7 @@
           input.value = String(score);
           input.id = 'rating-' + cIdx + '-' + sIdx + '-' + score;
 
+          // restore staged if present
           var stagedForProject = stagedRatings[currentProject] || {};
           var stagedForStudent = stagedForProject[sIdx] || {};
           if (stagedForStudent[cIdx] && String(stagedForStudent[cIdx]) === String(score)) {
@@ -285,18 +313,23 @@
           label.style.display = 'inline-block';
           label.style.padding = '2px';
           label.appendChild(input);
+
           td.appendChild(label);
           tr.appendChild(td);
         }
+
         tbody.appendChild(tr);
       });
 
       table.appendChild(tbody);
       critWrap.appendChild(table);
+
+      // Append criterion container into card, then card into matrix container
       card.appendChild(critWrap);
       matrixContainer.appendChild(card);
     });
 
+    // Single comment area (project-level)
     var commentSec = document.createElement('div');
     commentSec.className = 'section section-comment';
     commentSec.style.marginTop = '12px';
@@ -322,18 +355,28 @@
     commentWrap.appendChild(commentTA);
     commentSec.appendChild(commentWrap);
 
-    if (matrixContainer.parentNode) matrixContainer.parentNode.insertBefore(commentSec, matrixContainer.nextSibling);
-    else document.body.appendChild(commentSec);
+    if (matrixContainer.parentNode) {
+      matrixContainer.parentNode.insertBefore(commentSec, matrixContainer.nextSibling);
+    } else {
+      document.body.appendChild(commentSec);
+    }
 
-    // replace container to remove duplicate handlers
+    // Add event listeners for auto-saving staged ratings
+    // remove previous listeners if present by cloning node (guard against duplicates)
+    // (this pattern prevents duplicate handlers if function called repeatedly)
     var newMatrixContainer = matrixContainer.cloneNode(false);
-    while (matrixContainer.firstChild) newMatrixContainer.appendChild(matrixContainer.firstChild);
+    while (matrixContainer.firstChild) {
+      newMatrixContainer.appendChild(matrixContainer.firstChild);
+    }
     matrixContainer.parentNode.replaceChild(newMatrixContainer, matrixContainer);
     matrixContainer = newMatrixContainer;
 
     matrixContainer.addEventListener('change', saveDraftHandler);
     matrixContainer.addEventListener('input', saveDraftHandler);
     commentTA.addEventListener('input', saveDraftHandler);
+
+    if (typeof updateSectionVisibility === 'function') updateSectionVisibility();
+    if (typeof removeEmptySections === 'function') removeEmptySections();
   }
 
   // -------------------------
@@ -349,7 +392,6 @@
       for (var c = 0; c < RUBRIC.length; c++) {
         var sel = document.querySelector('input[name="rating-' + c + '-' + s + '"]:checked');
         if (sel) stagedRatings[currentProject][s][c] = parseInt(sel.value, 10);
-        else if (stagedRatings[currentProject][s][c] === undefined) stagedRatings[currentProject][s][c] = null;
       }
     }
     var ta = document.getElementById('project-comment');
@@ -362,7 +404,6 @@
   // Submit current project (collect all criteria)
   // -------------------------
   function submitCurrentProject() {
-    console.log('submitCurrentProject called for', currentProject);
     if (!currentProject) { setStatus('No project is loaded.', 'red'); return; }
     var students = sponsorProjects[currentProject] || [];
     if (!students.length) { setStatus('No students to submit.', 'red'); return; }
@@ -379,11 +420,6 @@
       if (taEl) commentVal = taEl.value || '';
       rows.push({ student: students[s], ratings: ratingsObj, comment: commentVal });
     }
-
-    var anyRated = rows.some(function (r) {
-      return Object.keys(r.ratings).some(function (k) { return r.ratings[k] != null; });
-    });
-    if (!anyRated) { setStatus('Please rate at least one student before submitting.', 'red'); return; }
 
     var payload = {
       sponsorName: currentName || (nameInput ? nameInput.value.trim() : ''),
@@ -425,7 +461,7 @@
 
       if (matrixContainer) matrixContainer.innerHTML = '';
       var commentSection = document.querySelector('.section.section-comment');
-      if (commentSection) commentSection.parentNode && commentSection.parentNode.removeChild(commentSection);
+      if (commentSection) commentSection.parentNode.removeChild(commentSection);
 
       var headerEl = document.querySelector('.current-project-header');
       if (headerEl && headerEl.parentNode) headerEl.parentNode.removeChild(headerEl);
@@ -434,6 +470,9 @@
       if (matrixInfoBlock) matrixInfoBlock.style.display = 'none';
 
       currentProject = '';
+      if (typeof updateSectionVisibility === 'function') updateSectionVisibility();
+      if (typeof removeEmptySections === 'function') removeEmptySections();
+
       if (hasCompletedAllProjects()) showThankyouStage();
     }).catch(function (err) {
       console.error('Submission failed', err);
@@ -446,38 +485,13 @@
   function hasCompletedAllProjects() {
     var entry = sponsorData[currentEmail] || {};
     var all = Object.keys(entry.projects || {});
-    if (!all || all.length === 0) return false;
     for (var i = 0; i < all.length; i++) if (!completedProjects[all[i]]) return false;
     return true;
   }
 
   // -------------------------
-  // Identity / events
+  // Event wiring
   // -------------------------
-  function tryFetchData(callback) {
-    var loaderUrl = DATA_LOADER_URL;
-    // if you want online vs hybrid, append ?source=online
-    // loaderUrl += '?source=online';
-    fetch(loaderUrl, { cache: 'no-store' }).then(function (r) {
-      if (!r.ok) throw new Error('Data loader returned ' + r.status);
-      return r.json();
-    }).then(function (rowsJson) {
-      var rows = parseRowsFromLoader(rowsJson);
-      sponsorData = buildSponsorMap(rows);
-      setStatus('Project data loaded. Enter your email to continue.', 'green');
-      loadProgress();
-      if (currentEmail && sponsorData[currentEmail]) {
-        showProjectsStage();
-        populateProjectListFor(currentEmail);
-      }
-      if (typeof callback === 'function') callback();
-    }).catch(function (err) {
-      console.error('Data loader fetch failed', err);
-      setStatus('Project data not found. Contact admin.', 'red');
-      if (typeof callback === 'function') callback();
-    });
-  }
-
   function onIdentitySubmit() {
     var name = nameInput ? nameInput.value.trim() : '';
     var email = emailInput ? (emailInput.value || '').toLowerCase().trim() : '';
@@ -499,7 +513,10 @@
         populateProjectListFor(currentEmail);
       });
     } else {
-      if (!sponsorData[currentEmail]) { setStatus('No projects found for that email.', 'red'); return; }
+      if (!sponsorData[currentEmail]) {
+        setStatus('No projects found for that email.', 'red');
+        return;
+      }
       showProjectsStage();
       populateProjectListFor(currentEmail);
     }
@@ -515,41 +532,83 @@
     currentProject = '';
     if (matrixContainer) matrixContainer.innerHTML = '';
     var commentSection = document.querySelector('.section.section-comment');
-    if (commentSection) { commentSection.parentNode && commentSection.parentNode.removeChild(commentSection); }
+    if (commentSection) commentSection.parentNode.removeChild(commentSection);
     showIdentityStage();
   });
 
+  // -------------------------
+  // Stage display helpers
+  // -------------------------
   function showIdentityStage() {
-    if (stageIdentity) stageIdentity.style.display = '';
-    if (stageProjects) stageProjects.style.display = 'none';
-    if (stageThankyou) stageThankyou.style.display = 'none';
-    if (underTitle) underTitle.style.display = '';
+    stageIdentity.style.display = '';
+    stageProjects.style.display = 'none';
+    stageThankyou.style.display = 'none';
+    welcomeBlock.style.display = '';
+    underTitle.style.display = '';
     setStatus('');
   }
   function showProjectsStage() {
-    if (stageIdentity) stageIdentity.style.display = 'none';
-    if (stageProjects) stageProjects.style.display = '';
-    if (stageThankyou) stageThankyou.style.display = 'none';
+    stageIdentity.style.display = 'none';
+    stageProjects.style.display = '';
+    stageThankyou.style.display = 'none';
+    welcomeBlock.style.display = 'none';
+    underTitle.style.display = 'none';
   }
   function showThankyouStage() {
-    if (stageIdentity) stageIdentity.style.display = 'none';
-    if (stageProjects) stageProjects.style.display = 'none';
-    if (stageThankyou) stageThankyou.style.display = '';
+    stageIdentity.style.display = 'none';
+    stageProjects.style.display = 'none';
+    stageThankyou.style.display = '';
+    welcomeBlock.style.display = 'none';
+    underTitle.style.display = 'none';
   }
 
-  // Boot
-  showIdentityStage();
+  // -------------------------
+  // Secure data fetch (replaces CSV)
+  // -------------------------
+  function tryFetchData(callback) {
+    fetch(DATA_LOADER_URL, { cache: 'no-store' })
+      .then(function (r) {
+        if (!r.ok) throw new Error('Data loader returned ' + r.status);
+        return r.json();
+      })
+      .then(function (rows) {
+        sponsorData = buildSponsorMap(rows);
+        setStatus('Project data loaded securely.', 'green');
+        loadProgress();
+        if (currentEmail && sponsorData[currentEmail]) {
+          showProjectsStage();
+          populateProjectListFor(currentEmail);
+        }
+        if (typeof callback === 'function') callback();
+      })
+      .catch(function (err) {
+        console.error('Data fetch failed', err);
+        setStatus('Project data not found. Please try again later.', 'red');
+        if (typeof callback === 'function') callback();
+      });
+  }
 
-  // Expose these functions in case your HTML uses inline handlers or external scripts
-  window.loadProjectIntoMatrix = loadProjectIntoMatrix;
-  window.submitCurrentProject = submitCurrentProject;
-  // Also expose a debug reload helper
+  // -------------------------
+  // Boot
+  // -------------------------
+  showIdentityStage();
+  tryFetchData();
+
+  // Debug helper
   window.__sponsorDebug = {
-    reloadData: function(cb){ tryFetchData(cb); },
-    sponsorData: sponsorData
+    sponsorData: sponsorData,
+    stagedRatings: stagedRatings,
+    completedProjects: completedProjects,
+    reloadData: function (cb) { tryFetchData(cb); }
   };
 
-})(); // end IIFE
+  window.__submitCurrentProject = submitCurrentProject;
+})();
+
+
+
+
+
 
 
 
