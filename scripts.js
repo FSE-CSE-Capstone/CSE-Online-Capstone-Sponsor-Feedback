@@ -6,6 +6,9 @@
   var ENDPOINT_URL = 'https://online-worker.sbecerr7.workers.dev/';  // POST submissions here
   var DATA_LOADER_URL = 'https://data-loader.sbecerr7.workers.dev/';     // GET sponsor/project data here
   var STORAGE_KEY = 'sponsor_progress_v1';
+  // set to 'online' for the online deployment, 'hybrid' or '' otherwise
+  var DATA_SOURCE = 'online';
+
 
   // --- RUBRIC (5 items) ---
   var RUBRIC = [
@@ -609,7 +612,14 @@
   // Secure data fetch (replaces CSV)
   // -------------------------
   function tryFetchData(callback) {
-    fetch(DATA_LOADER_URL, { cache: 'no-store' })
+    var loaderUrl = DATA_LOADER_URL;
+if (DATA_SOURCE) {
+  loaderUrl += (loaderUrl.indexOf('?') === -1
+    ? '?source=' + encodeURIComponent(DATA_SOURCE)
+    : '&source=' + encodeURIComponent(DATA_SOURCE));
+}
+fetch(loaderUrl, { cache: 'no-store' })
+
       .then(function (r) {
         if (!r.ok) throw new Error('Data loader returned ' + r.status);
         return r.json();
