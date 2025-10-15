@@ -4,7 +4,7 @@
 
   // --- Configuration (Cloudflare Workers endpoints) ---
   var ENDPOINT_URL = 'https://online-worker.sbecerr7.workers.dev/';  // POST submissions here
-  var DATA_LOADER_URL = 'https://data-loader.sbecerr7.workers.dev/';     // GET sponsor/project data here
+  var DATA_LOADER_URL = 'https://online-data-loader.sbecerr7.workers.dev/';     // GET sponsor/project data here
   var STORAGE_KEY = 'sponsor_progress_v1';
   // set to 'online' for the online deployment, 'hybrid' or '' otherwise
   var DATA_SOURCE = 'online';
