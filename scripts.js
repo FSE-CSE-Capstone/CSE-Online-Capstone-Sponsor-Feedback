@@ -616,6 +616,8 @@
       })
       .then(function (rows) {
         sponsorData = buildSponsorMap(rows);
+        window.__sponsorDebug && (window.__sponsorDebug.sponsorData = sponsorData);
+
         setStatus('Project data loaded securely.', 'green');
         loadProgress();
         if (currentEmail && sponsorData[currentEmail]) {
