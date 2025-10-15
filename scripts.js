@@ -10,7 +10,7 @@
   var DATA_SOURCE = 'online';
 
 
- // --- RUBRIC (5 items) ---
+  // --- RUBRIC (5 items) ---
   var RUBRIC = [
     {
       title: "Student has contributed an appropriate amount of development effort towards this project",
@@ -69,6 +69,26 @@
   function escapeHtml(s) {
     var map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
     return String(s || '').replace(/[&<>"']/g, function (m) { return map[m]; });
+  }
+
+  // --- remove empty placeholder cards that cause the "empty card" gap ---
+  function removeEmptyPlaceholderCards() {
+    if (!projectListEl) return;
+    var container = projectListEl.parentNode;
+    if (!container) return;
+
+    var cards = Array.prototype.slice.call(container.querySelectorAll('.card'));
+    cards.forEach(function (c) {
+      // skip cards that clearly contain meaningful controls/content
+      var hasControls = c.querySelector('input, textarea, select, button, table, label');
+      var text = (c.textContent || '').replace(/\s+/g, '');
+      if (!hasControls && text.length === 0) {
+        // be defensive: don't remove if it contains a marker class you rely on
+        if (!c.classList.contains('matrix-card') && !c.classList.contains('persistent-placeholder')) {
+          c.parentNode && c.parentNode.removeChild(c);
+        }
+      }
+    });
   }
 
   // -------------------------
@@ -255,6 +275,9 @@
       sponsorProjects[p] = entry.projects[p].slice();
     });
 
+    // remove any leftover empty placeholder cards under the project list
+    removeEmptyPlaceholderCards();
+
     setStatus('');
   }
 
@@ -269,8 +292,11 @@
     var oldInfo = document.getElementById('matrix-info');
     if (oldInfo && oldInfo.parentNode) oldInfo.parentNode.removeChild(oldInfo);
 
-    // clear previous matrices and comments
-    matrixContainer.innerHTML = '';
+    // clear previous matrices (we'll rebuild)
+    // but keep a reference to the parent so we can re-insert things
+    var parentNode = matrixContainer.parentNode;
+
+    // remove any old comment section first
     var oldComment = document.querySelector('.section.section-comment');
     if (oldComment && oldComment.parentNode) oldComment.parentNode.removeChild(oldComment);
 
@@ -295,8 +321,8 @@
     info.appendChild(hdr);
     info.appendChild(topDesc);
 
-    if (matrixContainer.parentNode) {
-      matrixContainer.parentNode.insertBefore(info, matrixContainer);
+    if (parentNode) {
+      parentNode.insertBefore(info, matrixContainer);
     } else {
       document.body.insertBefore(info, matrixContainer);
     }
@@ -310,13 +336,15 @@
     // Restore staged ratings for this project if existing
     if (!stagedRatings[currentProject]) stagedRatings[currentProject] = {};
 
+    // Start building new content into a temporary container (we will replace matrixContainer's children)
+    var tempContainer = document.createElement('div');
+
     // Build each criterion block stacked — each inside its own .card
     RUBRIC.forEach(function (crit, cIdx) {
       // outer card wrapper (use existing .card class)
       var card = document.createElement('div');
       card.className = 'card matrix-card';
       card.style.marginBottom = '20px';
-      // give a default padding if card has none via css
       card.style.padding = card.style.padding || '18px';
 
       // inside card: container for the criterion
@@ -331,13 +359,13 @@
       critTitle.style.fontWeight = '600';
       critWrap.appendChild(critTitle);
 
-      // Description — force inline styles to ensure it shows and is not bold
+      // Description
       var critDesc = document.createElement('div');
       critDesc.className = 'matrix-criterion-desc';
       critDesc.textContent = crit.description || '';
       critDesc.style.display = 'block';
       critDesc.style.color = '#0b1228';
-      critDesc.style.fontWeight = '400'; // normal
+      critDesc.style.fontWeight = '400';
       critDesc.style.fontSize = '14px';
       critDesc.style.lineHeight = '1.3';
       critDesc.style.margin = '0 0 12px 0';
@@ -415,15 +443,26 @@
       table.appendChild(tbody);
       critWrap.appendChild(table);
 
-      // Append criterion container into card, then card into matrix container
+      // Append criterion container into card, then card into temp container
       card.appendChild(critWrap);
-      matrixContainer.appendChild(card);
+      tempContainer.appendChild(card);
     });
 
-    // Single comment area (project-level)
+    // Now replace matrixContainer's children with the built content safely
+    // (preserve the same matrixContainer node reference so outer code still points to it)
+    while (matrixContainer.firstChild) matrixContainer.removeChild(matrixContainer.firstChild);
+    while (tempContainer.firstChild) matrixContainer.appendChild(tempContainer.firstChild);
+
+    // After replacing children, ensure the comment section is created and appended AFTER the matrixContainer
+    // Remove any old comment just in case, then create a fresh one
+    var existingComment = document.querySelector('.section.section-comment');
+    if (existingComment && existingComment.parentNode) existingComment.parentNode.removeChild(existingComment);
+
     var commentSec = document.createElement('div');
     commentSec.className = 'section section-comment';
     commentSec.style.marginTop = '12px';
+    // *** FIX: override the CSS rule that hides .section.section-comment by default
+    commentSec.style.display = 'block';
 
     var commentWrap = document.createElement('div');
     commentWrap.className = 'project-comment-wrap';
@@ -439,6 +478,7 @@
     commentTA.style.minHeight = '80px';
     commentTA.style.padding = '8px';
 
+    // Restore staged comment if present
     var stagedComment = stagedRatings[currentProject] && stagedRatings[currentProject]._comment;
     if (stagedComment) commentTA.value = stagedComment;
 
@@ -446,24 +486,28 @@
     commentWrap.appendChild(commentTA);
     commentSec.appendChild(commentWrap);
 
-    if (matrixContainer.parentNode) {
-      matrixContainer.parentNode.insertBefore(commentSec, matrixContainer.nextSibling);
+    if (matrixContainer && matrixContainer.parentNode) {
+      // put the comment section immediately after matrixContainer
+      if (matrixContainer.nextSibling) {
+        matrixContainer.parentNode.insertBefore(commentSec, matrixContainer.nextSibling);
+      } else {
+        matrixContainer.parentNode.appendChild(commentSec);
+      }
     } else {
       document.body.appendChild(commentSec);
     }
 
-    // Add event listeners for auto-saving staged ratings
-    // remove previous listeners if present by cloning node (guard against duplicates)
-    // (this pattern prevents duplicate handlers if function called repeatedly)
-    var newMatrixContainer = matrixContainer.cloneNode(false);
-    while (matrixContainer.firstChild) {
-      newMatrixContainer.appendChild(matrixContainer.firstChild);
-    }
-    matrixContainer.parentNode.replaceChild(newMatrixContainer, matrixContainer);
-    matrixContainer = newMatrixContainer;
+    // tidy up any empty placeholder cards that remain
+    removeEmptyPlaceholderCards();
 
+    // Attach event listeners
+    matrixContainer.removeEventListener && matrixContainer.removeEventListener('change', saveDraftHandler);
+    matrixContainer.removeEventListener && matrixContainer.removeEventListener('input', saveDraftHandler);
     matrixContainer.addEventListener('change', saveDraftHandler);
     matrixContainer.addEventListener('input', saveDraftHandler);
+
+    // ensure comment textarea saves to stagedRatings on input
+    commentTA.removeEventListener && commentTA.removeEventListener('input', saveDraftHandler);
     commentTA.addEventListener('input', saveDraftHandler);
 
     if (typeof updateSectionVisibility === 'function') updateSectionVisibility();
@@ -542,7 +586,8 @@
       saveProgress();
 
       if (projectListEl) {
-        var li = projectListEl.querySelector('li[data-project="' + CSS.escape(currentProject) + '"]');
+        var selector = 'li[data-project="' + CSS.escape(currentProject) + '"]';
+        var li = projectListEl.querySelector(selector);
         if (li) {
           li.classList.add('completed');
           li.classList.remove('active');
@@ -631,26 +676,26 @@
   // Stage display helpers
   // -------------------------
   function showIdentityStage() {
-    stageIdentity.style.display = '';
-    stageProjects.style.display = 'none';
-    stageThankyou.style.display = 'none';
-    welcomeBlock.style.display = '';
-    underTitle.style.display = '';
+    if (stageIdentity) stageIdentity.style.display = '';
+    if (stageProjects) stageProjects.style.display = 'none';
+    if (stageThankyou) stageThankyou.style.display = 'none';
+    if (welcomeBlock) welcomeBlock.style.display = '';
+    if (underTitle) underTitle.style.display = '';
     setStatus('');
   }
   function showProjectsStage() {
-    stageIdentity.style.display = 'none';
-    stageProjects.style.display = '';
-    stageThankyou.style.display = 'none';
-    welcomeBlock.style.display = 'none';
-    underTitle.style.display = 'none';
+    if (stageIdentity) stageIdentity.style.display = 'none';
+    if (stageProjects) stageProjects.style.display = '';
+    if (stageThankyou) stageThankyou.style.display = 'none';
+    if (welcomeBlock) welcomeBlock.style.display = 'none';
+    if (underTitle) underTitle.style.display = 'none';
   }
   function showThankyouStage() {
-    stageIdentity.style.display = 'none';
-    stageProjects.style.display = 'none';
-    stageThankyou.style.display = '';
-    welcomeBlock.style.display = 'none';
-    underTitle.style.display = 'none';
+    if (stageIdentity) stageIdentity.style.display = 'none';
+    if (stageProjects) stageProjects.style.display = 'none';
+    if (stageThankyou) stageThankyou.style.display = '';
+    if (welcomeBlock) welcomeBlock.style.display = 'none';
+    if (underTitle) underTitle.style.display = 'none';
   }
 
   // -------------------------
