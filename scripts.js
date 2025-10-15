@@ -68,22 +68,64 @@
     return String(s || '').replace(/[&<>"']/g, function (m) { return map[m]; });
   }
 
+  // -------------------------
+  // Robust mapping from data-loader rows to sponsorData
+  // Accepts varied header names and trims values.
+  // -------------------------
   function buildSponsorMap(rows) {
     var map = {};
-    rows.forEach(function (r) {
-      var email = (r.sponsorEmail || r.email || '').toLowerCase();
-      var project = (r.project || '').trim();
-      var student = (r.student || '').trim();
+    if (!Array.isArray(rows) || rows.length === 0) return map;
+
+    rows.forEach(function (rawRow) {
+      // produce a normalized object with canonical keys
+      var normalized = { sponsorEmail: '', project: '', student: '' };
+
+      Object.keys(rawRow || {}).forEach(function (rawKey) {
+        var keyNorm = String(rawKey || '').trim().toLowerCase();
+        var rawVal = (rawRow[rawKey] || '').toString();
+        var val = rawVal.replace(/\u00A0/g, ' ').trim(); // replace NBSP, trim
+
+        // map header variants
+        if (keyNorm === 'sponsoremail' || keyNorm === 'sponsor email' || keyNorm === 'sponsor' || keyNorm === 'email' || keyNorm === 'login_id' || keyNorm === 'sponsor_email') {
+          if (!normalized.sponsorEmail) normalized.sponsorEmail = val;
+        } else if (keyNorm === 'project' || keyNorm === 'project name' || keyNorm === 'project_title' || keyNorm === 'group_name' || keyNorm === 'projectname') {
+          if (!normalized.project) normalized.project = val;
+        } else if (keyNorm === 'student' || keyNorm === 'student name' || keyNorm === 'students' || keyNorm === 'name' || keyNorm === 'student_name') {
+          if (!normalized.student) normalized.student = val;
+        } else {
+          // ignore other columns
+        }
+      });
+
+      var email = (normalized.sponsorEmail || '').toLowerCase().trim();
+      var project = (normalized.project || '').trim();
+      var student = (normalized.student || '').trim();
+
+      // skip rows that are missing critical pieces
       if (!email || !project || !student) return;
+
       if (!map[email]) map[email] = { projects: {} };
       if (!map[email].projects[project]) map[email].projects[project] = [];
       if (map[email].projects[project].indexOf(student) === -1) {
         map[email].projects[project].push(student);
       }
     });
+
+    // debug summary
+    try {
+      var sponsorCount = Object.keys(map).length;
+      var projectCount = Object.keys(map).reduce(function (acc, e) {
+        return acc + Object.keys(map[e].projects || {}).length;
+      }, 0);
+      console.info('buildSponsorMap: mapped', sponsorCount, 'sponsors and', projectCount, 'projects total');
+    } catch (e) {}
+
     return map;
   }
 
+  // -------------------------
+  // Save / load progress
+  // -------------------------
   function saveProgress() {
     var payload = {
       name: currentName,
@@ -110,6 +152,7 @@
         stagedRatings = obj.stagedRatings || {};
         if (nameInput) nameInput.value = currentName;
         if (emailInput) emailInput.value = currentEmail;
+        console.info('loadProgress: restored', currentEmail || '(none)');
       }
     } catch (e) {
       console.warn('Could not load progress', e);
@@ -167,7 +210,7 @@
     setStatus('');
   }
 
-    // -------------------------
+  // -------------------------
   // Render matrix for a project (stacked rubric; each criterion in its own card)
   // -------------------------
   function loadProjectIntoMatrix(projectName, students) {
