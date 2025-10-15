@@ -3,7 +3,7 @@
   'use strict';
 
   // --- Configuration ---
-  var ENDPOINT_URL = 'https://csesponsors.sbecerr7.workers.dev/'; // writing worker (submit)
+  var ENDPOINT_URL = 'https://online-worker.sbecerr7.workers.dev/'; // writing worker (submit)
   var DATA_LOADER_URL = 'https://data-loader.sbecerr7.workers.dev/'; // reading worker (private sheet)
   var STORAGE_KEY = 'sponsor_progress_v1';
 
