@@ -10,32 +10,33 @@
   var DATA_SOURCE = 'online';
 
 
-  // --- RUBRIC (5 items) ---
+  // Rubric
   var RUBRIC = [
     { title: "Student has contributed an appropriate amount of development effort towards this project", description: "Development effort should be balanced between all team members; student should commit to a fair amount of development effort on each sprint." },
-    { title: "Student's level of contribution and participation in meetings", description: "Students are expected to be proactive. Contributions and participation in meetings help ensure the student is aware of project goals." },
-    { title: "Student's understanding of your project/problem", description: "Students are expected to understand important details of the project and be able to explain it from different stakeholder perspectives." },
-    { title: "Quality of student's work product", description: "Students should complete assigned work to a high quality: correct, documented, and self-explanatory where appropriate." },
-    { title: "Quality and frequency of student's communications", description: "Students are expected to be in regular communication and maintain professionalism when interacting with the sponsor." }
+    { title: "Meetings", description: "Students are expected to be proactive. Contributions and participation in meetings help ensure the student is aware of project goals." },
+    { title: "Understanding", description: "Students are expected to understand important details of the project and be able to explain it from different stakeholder perspectives." },
+    { title: "Quality", description: "Students should complete assigned work to a high quality: correct, documented, and self-explanatory where appropriate." },
+    { title: "Communication", description: "Students are expected to be in regular communication and maintain professionalism when interacting with the sponsor." }
   ];
 
-  // --- DOM nodes ---
-  var stageIdentity = document.getElementById('stage-identity');
-  var stageProjects = document.getElementById('stage-projects');
-  var stageThankyou = document.getElementById('stage-thankyou');
-  var identitySubmit = document.getElementById('identitySubmit');
-  var backToIdentity = document.getElementById('backToIdentity');
-  var nameInput = document.getElementById('fullName');
-  var emailInput = document.getElementById('email');
-  var projectListEl = document.getElementById('project-list');
-  var matrixContainer = document.getElementById('matrix-container');
-  var formStatus = document.getElementById('form-status');
-  var submitProjectBtn = document.getElementById('submitProject');
-  var finishStartOverBtn = document.getElementById('finishStartOver');
-  var welcomeBlock = document.getElementById('welcome-block');
-  var underTitle = document.getElementById('under-title');
+  // DOM refs
+  var $ = function (id) { return document.getElementById(id); };
+  var stageIdentity = $('stage-identity');
+  var stageProjects = $('stage-projects');
+  var stageThankyou = $('stage-thankyou');
+  var identitySubmit = $('identitySubmit');
+  var backToIdentity = $('backToIdentity');
+  var nameInput = $('fullName');
+  var emailInput = $('email');
+  var projectListEl = $('project-list');
+  var matrixContainer = $('matrix-container');
+  var formStatus = $('form-status');
+  var submitProjectBtn = $('submitProject');
+  var finishStartOverBtn = $('finishStartOver');
+  var welcomeBlock = $('welcome-block');
+  var underTitle = $('under-title');
 
-  // --- State ---
+  // State
   var sponsorData = {};
   var sponsorProjects = {};
   var currentEmail = '';
@@ -44,154 +45,99 @@
   var completedProjects = {};
   var stagedRatings = {};
 
-  // --- Helpers ---
+  // ------- Helpers -------
   function setStatus(msg, color) {
     if (!formStatus) return;
     formStatus.textContent = msg || '';
     formStatus.style.color = color || '';
   }
-
   function escapeHtml(s) {
-    var map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
-    return String(s || '').replace(/[&<>"']/g, function (m) { return map[m]; });
-  }
-
-  // --- remove empty placeholder cards that cause the "empty card" gap ---
-  function removeEmptyPlaceholderCards() {
-    if (!projectListEl) return;
-    var container = projectListEl.parentNode;
-    if (!container) return;
-
-    var cards = Array.prototype.slice.call(container.querySelectorAll('.card'));
-    cards.forEach(function (c) {
-      var hasControls = c.querySelector('input, textarea, select, button, table, label');
-      var text = (c.textContent || '').replace(/\s+/g, '');
-      if (!hasControls && text.length === 0) {
-        if (!c.classList.contains('matrix-card') && !c.classList.contains('persistent-placeholder')) {
-          c.parentNode && c.parentNode.removeChild(c);
-        }
-      }
+    if (s == null) return '';
+    return String(s).replace(/[&<>"']/g, function (m) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m];
     });
   }
 
-  // -------------------------
-  // Robust mapping from data-loader rows to sponsorData
-  // Accepts varied header names, trims values, and supports multiple emails per sponsor cell.
-  // -------------------------
+  // element builder utility to reduce repetition
+  function el(tag, props, children) {
+    var n = document.createElement(tag);
+    if (props) {
+      Object.keys(props).forEach(function (k) {
+        if (k === 'class') n.className = props[k];
+        else if (k === 'html') n.innerHTML = props[k];
+        else if (k === 'text') n.textContent = props[k];
+        else if (k === 'style') Object.assign(n.style, props[k]);
+        else n.setAttribute(k, props[k]);
+      });
+    }
+    if (children) children.forEach(function (c) { if (typeof c === 'string') n.appendChild(document.createTextNode(c)); else n.appendChild(c); });
+    return n;
+  }
+
+  // Clean tokens and build sponsor map
   function buildSponsorMap(rows) {
     var map = {};
-    if (!Array.isArray(rows) || rows.length === 0) return map;
-
+    if (!Array.isArray(rows)) return map;
     var emailRegex = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
-
     function cleanToken(tok) {
       if (!tok) return '';
-      tok = tok.replace(/^[\s"'`([{]+|[\s"'`)\]}.,:;]+$/g, '').replace(/\u00A0/g, ' ').trim();
-      if (tok.indexOf('@') !== -1 && tok.indexOf(' ') !== -1) {
-        tok = tok.split(' ').join('');
-      }
-      return tok;
+      return tok.replace(/^[\s"'`([{]+|[\s"'`)\]}.,:;]+$/g, '').replace(/\u00A0/g, ' ').trim();
     }
-
     rows.forEach(function (rawRow) {
-      var project = '';
-      var student = '';
-      var sponsorCell = '';
-
+      var project = '', student = '', sponsorCell = '';
       Object.keys(rawRow || {}).forEach(function (rawKey) {
         var keyNorm = String(rawKey || '').trim().toLowerCase();
-        var rawVal = (rawRow[rawKey] || '').toString();
-        var val = rawVal.replace(/\u00A0/g, ' ').trim();
-
-        if (!project && (keyNorm === 'project' || keyNorm === 'project name' || keyNorm === 'project_title' || keyNorm === 'group_name' || keyNorm === 'projectname')) {
-          project = val;
-        } else if (!student && (keyNorm === 'student' || keyNorm === 'student name' || keyNorm === 'students' || keyNorm === 'name' || keyNorm === 'student_name')) {
-          student = val;
-        } else if (!sponsorCell && (keyNorm === 'sponsoremail' || keyNorm === 'sponsor email' || keyNorm === 'sponsor' || keyNorm === 'email' || keyNorm === 'login_id' || keyNorm === 'sponsor_email')) {
-          sponsorCell = val;
-        }
+        var rawVal = (rawRow[rawKey] || '').toString().replace(/\u00A0/g, ' ').trim();
+        if (!project && /^(project|project name|project_title|group_name|projectname)$/.test(keyNorm)) project = rawVal;
+        else if (!student && /^(student|student name|students|name|student_name)$/.test(keyNorm)) student = rawVal;
+        else if (!sponsorCell && /^(sponsoremail|sponsor email|sponsor|email|login_id|sponsor_email)$/.test(keyNorm)) sponsorCell = rawVal;
       });
 
-      project = (project || '').trim();
-      student = (student || '').trim();
-
+      // fallback: extract emails from any cell
       if (!sponsorCell) {
-        var fallbackEmails = [];
+        var fallback = [];
         Object.keys(rawRow || {}).forEach(function (k) {
           var rv = (rawRow[k] || '').toString();
           var found = rv.match(emailRegex);
-          if (found && found.length) fallbackEmails = fallbackEmails.concat(found);
+          if (found) fallback = fallback.concat(found);
         });
-        if (fallbackEmails.length) sponsorCell = fallbackEmails.join(', ');
+        if (fallback.length) sponsorCell = fallback.join(', ');
       }
 
+      project = (project || '').trim(); student = (student || '').trim();
       if (!sponsorCell || !project || !student) return;
 
-      // Split on common separators first
       var tokens = sponsorCell.split(/[,;\/|]+/);
       var foundEmails = [];
-
       tokens.forEach(function (t) {
         var cleaned = cleanToken(t);
         if (!cleaned) return;
-        var m = cleaned.match(emailRegex);
-        if (m && m.length) {
-          m.forEach(function (em) { foundEmails.push(em.toLowerCase().trim()); });
-          return;
-        }
-        var m2 = t.match(emailRegex);
-        if (m2 && m2.length) {
-          m2.forEach(function (em) { foundEmails.push(em.toLowerCase().trim()); });
-          return;
-        }
-        if (t.indexOf('@') !== -1) {
-          var nospace = t.replace(/\s+/g, '');
-          var m3 = nospace.match(emailRegex);
-          if (m3 && m3.length) m3.forEach(function (em) { foundEmails.push(em.toLowerCase().trim()); });
-        }
+        var matches = cleaned.match(emailRegex) || t.match(emailRegex) || (t.replace(/\s+/g, '').match(emailRegex) || []);
+        if (matches) matches.forEach(function (em) { foundEmails.push(em.toLowerCase().trim()); });
       });
 
-      // dedupe & sanity-check
-      var uniqueEmails = [];
-      foundEmails.forEach(function (em) {
-        var e = (em || '').toLowerCase().trim();
-        if (!e) return;
-        if (e.indexOf('@') === -1) return;
+      var unique = [];
+      foundEmails.forEach(function (e) {
+        if (!e || e.indexOf('@') === -1) return;
         var parts = e.split('@');
         if (parts.length !== 2 || parts[1].indexOf('.') === -1) return;
-        if (uniqueEmails.indexOf(e) === -1) uniqueEmails.push(e);
+        if (unique.indexOf(e) === -1) unique.push(e);
       });
-
-      if (!uniqueEmails.length) return;
-
-      uniqueEmails.forEach(function (email) {
+      if (!unique.length) return;
+      unique.forEach(function (email) {
         if (!map[email]) map[email] = { projects: {} };
         if (!map[email].projects[project]) map[email].projects[project] = [];
-        if (map[email].projects[project].indexOf(student) === -1) {
-          map[email].projects[project].push(student);
-        }
+        if (map[email].projects[project].indexOf(student) === -1) map[email].projects[project].push(student);
       });
     });
-
-    try {
-      var sponsorCount = Object.keys(map).length;
-      var projectCount = Object.keys(map).reduce(function (acc, e) {
-        return acc + Object.keys(map[e].projects || {}).length;
-      }, 0);
-      console.info('buildSponsorMap: mapped', sponsorCount, 'sponsors and', projectCount, 'projects total');
-    } catch (e) {}
-
     return map;
   }
 
-  // -------------------------
-  // Save / load progress
-  // -------------------------
+  // Persistence
   function saveProgress() {
     var payload = { name: currentName, email: currentEmail, completedProjects: completedProjects, stagedRatings: stagedRatings };
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(payload)); } catch (e) { console.warn('Could not save progress', e); }
   }
-
   function loadProgress() {
     try {
       var raw = localStorage.getItem(STORAGE_KEY);
@@ -204,14 +150,11 @@
         stagedRatings = obj.stagedRatings || {};
         if (nameInput) nameInput.value = currentName;
         if (emailInput) emailInput.value = currentEmail;
-        console.info('loadProgress: restored', currentEmail || '(none)');
       }
     } catch (e) { console.warn('Could not load progress', e); }
   }
 
-  // -------------------------
-  // Project list builder
-  // -------------------------
+  // Populate project list
   function populateProjectListFor(email) {
     if (!projectListEl) return;
     projectListEl.innerHTML = '';
@@ -224,227 +167,324 @@
       var cb = completedProjects[b] ? 1 : 0;
       return ca - cb;
     });
-
     allProjects.forEach(function (p) {
-      var li = document.createElement('li');
-      li.className = 'project-item';
-      li.tabIndex = 0;
-      li.setAttribute('data-project', p);
-
-      if (completedProjects[p]) {
-        li.className += ' completed';
-        li.innerHTML = '<strong>' + escapeHtml(p) + '</strong> <span class="meta">(completed)</span>';
-      } else {
-        li.innerHTML = '<strong>' + escapeHtml(p) + '</strong>';
-      }
-
+      var li = el('li', { class: 'project-item', tabindex: 0, 'data-project': p });
+      li.innerHTML = completedProjects[p]
+        ? '<strong>' + escapeHtml(p) + '</strong> <span class="meta">(completed)</span>'
+        : '<strong>' + escapeHtml(p) + '</strong>';
       li.addEventListener('click', function () {
         if (completedProjects[p]) { setStatus('This project is already completed.', 'red'); return; }
-        var act = projectListEl.querySelectorAll('.project-item.active');
-        for (var ai = 0; ai < act.length; ai++) act[ai].classList.remove('active');
+        Array.from(projectListEl.querySelectorAll('.project-item.active')).forEach(function (a) { a.classList.remove('active'); });
         li.classList.add('active');
+        currentProject = p;
         loadProjectIntoMatrix(p, entry.projects[p]);
         setStatus('');
       });
-
       projectListEl.appendChild(li);
       sponsorProjects[p] = entry.projects[p].slice();
     });
-
-    // remove any leftover empty placeholder cards under the project list
-    removeEmptyPlaceholderCards();
     setStatus('');
   }
 
-  // -------------------------
-  // Render matrix for a project (stacked rubric; each criterion in its own card)
-  // This function builds into a temporary container, swaps children, then creates the comment section after the matrix.
-  // -------------------------
+  // Remove empty placeholder cards (kept small & defensive)
+  function removeEmptyPlaceholderCards() {
+    if (!projectListEl) return;
+    var container = projectListEl.parentNode;
+    if (!container) return;
+    Array.from(container.querySelectorAll('.card')).forEach(function (c) {
+      var hasControls = c.querySelector('input, textarea, select, button, table, label');
+      var text = (c.textContent || '').replace(/\s+/g, '');
+      if (!hasControls && text.length === 0 && !c.classList.contains('matrix-card') && !c.classList.contains('persistent-placeholder')) {
+        c.parentNode && c.parentNode.removeChild(c);
+      }
+    });
+  }
+
+  // Build matrix for a project
   function loadProjectIntoMatrix(projectName, students) {
+    if (!projectName) return;
     currentProject = projectName;
-    if (!matrixContainer) return;
 
-    // Remove any previously injected matrix-info to avoid duplicates
-    var oldInfo = document.getElementById('matrix-info');
-    if (oldInfo && oldInfo.parentNode) oldInfo.parentNode.removeChild(oldInfo);
+    // cleanup prior UI fragments
+    var existingInfo = $('matrix-info'); if (existingInfo && existingInfo.parentNode) existingInfo.parentNode.removeChild(existingInfo);
+    Array.from(document.querySelectorAll('.current-project-header')).forEach(function (h) { if (h.parentNode) h.parentNode.removeChild(h); });
+    var oldComment = document.querySelector('.section.section-comment'); if (oldComment && oldComment.parentNode) oldComment.parentNode.removeChild(oldComment);
 
-    // Remove any old comment section first (we'll re-create it)
-    var oldComment = document.querySelector('.section.section-comment');
-    if (oldComment && oldComment.parentNode) oldComment.parentNode.removeChild(oldComment);
-
-    // Create matrix-info header and insert before matrixContainer if possible
-    var info = document.createElement('div');
-    info.id = 'matrix-info';
-    var hdr = document.createElement('div'); hdr.className = 'current-project-header'; hdr.textContent = projectName || '';
-    hdr.style.display = 'block'; hdr.style.marginBottom = '6px'; hdr.style.fontWeight = '600';
-    var topDesc = document.createElement('div'); topDesc.className = 'matrix-info-desc';
-    topDesc.textContent = 'Please evaluate the students using the rubric below (scale 1–7).';
-    topDesc.style.display = 'block'; topDesc.style.color = '#0b1228'; topDesc.style.fontWeight = '400';
-    topDesc.style.fontSize = '14px'; topDesc.style.marginBottom = '12px';
+    // header/info
+    var info = el('div', { id: 'matrix-info' });
+    var hdr = el('div', { class: 'current-project-header', text: projectName, style: { display: 'block', marginBottom: '6px', fontWeight: '600' } });
+    var topDesc = el('div', { class: 'matrix-info-desc', text: 'Please evaluate the students using the rubric below (scale 1–7).', style: { display: 'block', color: '#0b1228', fontWeight: '400', fontSize: '14px', marginBottom: '12px' } });
     info.appendChild(hdr); info.appendChild(topDesc);
-
-    if (matrixContainer.parentNode) matrixContainer.parentNode.insertBefore(info, matrixContainer);
-    else document.body.insertBefore(info, matrixContainer);
+    if (matrixContainer && matrixContainer.parentNode) matrixContainer.parentNode.insertBefore(info, matrixContainer);
+    else if (matrixContainer) document.body.insertBefore(info, matrixContainer);
 
     if (!students || !students.length) {
-      matrixContainer.textContent = 'No students found for this project.';
+      if (matrixContainer) matrixContainer.textContent = 'No students found for this project.';
       return;
     }
 
     if (!stagedRatings[currentProject]) stagedRatings[currentProject] = {};
 
-    var tempContainer = document.createElement('div');
+    // build matrix content in a temp container
+    var temp = document.createElement('div');
 
     RUBRIC.forEach(function (crit, cIdx) {
-      var card = document.createElement('div');
-      card.className = 'card matrix-card';
-      card.style.marginBottom = '20px';
-      card.style.padding = card.style.padding || '18px';
+      var card = el('div', { class: 'card matrix-card', style: { marginBottom: '20px', padding: '18px' } });
+      var critWrap = el('div', { class: 'matrix-criterion' });
+      var critTitle = el('h4', { class: 'matrix-criterion-title', text: (cIdx + 1) + '. ' + crit.title, style: { margin: '0 0 8px 0', fontWeight: '600' } });
+      var critDesc = el('div', { class: 'matrix-criterion-desc', text: crit.description, style: { display: 'block', color: '#0b1228', fontWeight: '400', fontSize: '14px', lineHeight: '1.3', margin: '0 0 12px 0' } });
+      critWrap.appendChild(critTitle); critWrap.appendChild(critDesc);
 
-      var critWrap = document.createElement('div'); critWrap.className = 'matrix-criterion';
+      // table with colgroup & headers
+      var table = el('table', { class: 'matrix-table' });
+      var colgroup = el('colgroup');
+      colgroup.appendChild(el('col', { style: { width: '46%' } }));
+      colgroup.appendChild(el('col', { style: { width: '12%' } }));
+      for (var ci = 0; ci < 7; ci++) colgroup.appendChild(el('col', { style: { width: '4%' } }));
+      colgroup.appendChild(el('col', { style: { width: '12%' } }));
+      table.appendChild(colgroup);
 
-      var critTitle = document.createElement('h4'); critTitle.className = 'matrix-criterion-title';
-      critTitle.textContent = (cIdx + 1) + '. ' + (crit.title || ''); critTitle.style.margin = '0 0 8px 0'; critTitle.style.fontWeight = '600';
-      critWrap.appendChild(critTitle);
-
-      var critDesc = document.createElement('div'); critDesc.className = 'matrix-criterion-desc';
-      critDesc.textContent = crit.description || ''; critDesc.style.display = 'block'; critDesc.style.color = '#0b1228';
-      critDesc.style.fontWeight = '400'; critDesc.style.fontSize = '14px'; critDesc.style.lineHeight = '1.3'; critDesc.style.margin = '0 0 12px 0';
-      critWrap.appendChild(critDesc);
-
-      var table = document.createElement('table'); table.className = 'matrix-table'; table.style.width = '100%'; table.style.borderCollapse = 'collapse';
-      var thead = document.createElement('thead'); var trHead = document.createElement('tr');
-
-      var thName = document.createElement('th'); thName.textContent = 'Student'; thName.style.textAlign = 'left'; thName.style.padding = '8px';
-      trHead.appendChild(thName);
-
-      for (var k = 1; k <= 7; k++) {
-        var th = document.createElement('th'); th.textContent = String(k); th.style.padding = '8px'; th.style.textAlign = 'center'; trHead.appendChild(th);
-      }
+      var thead = el('thead');
+      var trHead = el('tr');
+      trHead.appendChild(el('th', { text: 'Student', style: { textAlign: 'left', padding: '8px' } }));
+      trHead.appendChild(el('th', { class: 'header-descriptor', html: '<div class="hd-line">Far Below Expectations</div><div class="hd-sub">(Fail)</div>', style: { textAlign: 'center', padding: '8px' } }));
+      for (var k = 1; k <= 7; k++) trHead.appendChild(el('th', { text: String(k), style: { padding: '8px', textAlign: 'center' } }));
+      trHead.appendChild(el('th', { class: 'header-descriptor header-descriptor-right', html: '<div class="hd-line">Exceeds Expectations</div><div class="hd-sub">(A+)</div>', style: { textAlign: 'center', padding: '8px' } }));
       thead.appendChild(trHead); table.appendChild(thead);
 
-      var tbody = document.createElement('tbody');
-
+      var tbody = el('tbody');
       students.forEach(function (studentName, sIdx) {
-        var tr = document.createElement('tr');
-        var tdName = document.createElement('td'); tdName.textContent = studentName; tdName.style.padding = '8px 10px'; tdName.style.verticalAlign = 'middle';
-        tr.appendChild(tdName);
+        var tr = el('tr');
+        tr.appendChild(el('td', { text: studentName, style: { padding: '8px 10px', verticalAlign: 'middle', textAlign: 'left' } }));
+        tr.appendChild(el('td', { class: 'col-descriptor', style: { padding: '8px' } }));
 
         for (var score = 1; score <= 7; score++) {
-          var td = document.createElement('td'); td.style.textAlign = 'center'; td.style.padding = '8px';
-          var input = document.createElement('input'); input.type = 'radio'; input.name = 'rating-' + cIdx + '-' + sIdx; input.value = String(score);
-          input.id = 'rating-' + cIdx + '-' + sIdx + '-' + score;
-
-          var stagedForProject = stagedRatings[currentProject] || {};
-          var stagedForStudent = stagedForProject[sIdx] || {};
+          var td = el('td', { style: { textAlign: 'center', padding: '8px' } });
+          var input = el('input', { type: 'radio', name: 'rating-' + cIdx + '-' + sIdx, value: String(score), id: 'rating-' + cIdx + '-' + sIdx + '-' + score });
+          var stagedForStudent = (stagedRatings[currentProject] && stagedRatings[currentProject][sIdx]) || {};
           if (stagedForStudent[cIdx] && String(stagedForStudent[cIdx]) === String(score)) input.checked = true;
-
-          var label = document.createElement('label'); label.setAttribute('for', input.id); label.style.cursor = 'pointer'; label.style.display = 'inline-block'; label.style.padding = '2px';
-          label.appendChild(input);
-          td.appendChild(label); tr.appendChild(td);
+          var label = el('label', { for: input.id, style: { cursor: 'pointer', display: 'inline-block', padding: '2px' } });
+          label.appendChild(input); td.appendChild(label); tr.appendChild(td);
         }
 
+        tr.appendChild(el('td', { class: 'col-descriptor', style: { padding: '8px' } }));
         tbody.appendChild(tr);
       });
 
-      table.appendChild(tbody); critWrap.appendChild(table); card.appendChild(critWrap); tempContainer.appendChild(card);
+      // team row
+      var trTeam = el('tr');
+      trTeam.appendChild(el('td', { text: 'Team Overall', style: { padding: '8px 10px', verticalAlign: 'middle', textAlign: 'left' } }));
+      trTeam.appendChild(el('td', { class: 'col-descriptor', style: { padding: '8px' } }));
+      for (var sScore = 1; sScore <= 7; sScore++) {
+        var tdT = el('td', { style: { textAlign: 'center', padding: '8px' } });
+        var inputT = el('input', { type: 'radio', name: 'rating-' + cIdx + '-team', value: String(sScore), id: 'rating-' + cIdx + '-team-' + sScore });
+        var stagedTeam = (stagedRatings[currentProject] && stagedRatings[currentProject].team) || {};
+        if (stagedTeam[cIdx] && String(stagedTeam[cIdx]) === String(sScore)) inputT.checked = true;
+        var lblT = el('label', { for: inputT.id, style: { cursor: 'pointer', display: 'inline-block', padding: '2px' } });
+        lblT.appendChild(inputT); tdT.appendChild(lblT); trTeam.appendChild(tdT);
+      }
+      trTeam.appendChild(el('td', { class: 'col-descriptor', style: { padding: '8px' } }));
+      tbody.appendChild(trTeam);
+
+      table.appendChild(tbody); critWrap.appendChild(table); card.appendChild(critWrap); temp.appendChild(card);
     });
 
-    // Replace matrixContainer children with built content
-    while (matrixContainer.firstChild) matrixContainer.removeChild(matrixContainer.firstChild);
-    while (tempContainer.firstChild) matrixContainer.appendChild(tempContainer.firstChild);
+    // replace matrix content
+    if (matrixContainer) {
+      matrixContainer.innerHTML = '';
+      while (temp.firstChild) matrixContainer.appendChild(temp.firstChild);
+    }
 
-    // Create the comment section AFTER the matrix
-    var commentSec = document.createElement('div');
-    commentSec.className = 'section section-comment';
-    commentSec.style.marginTop = '12px';
-    commentSec.style.display = 'block'; // explicit display to avoid CSS hiding
+    renderCommentSection(projectName, students);
+    attachMatrixListeners();
 
-    var commentWrap = document.createElement('div'); commentWrap.className = 'project-comment-wrap';
-    var commentLabel = document.createElement('label'); commentLabel.setAttribute('for', 'project-comment'); commentLabel.textContent = 'Optional project comment';
-    commentLabel.style.display = 'block'; commentLabel.style.marginBottom = '6px';
-    var commentTA = document.createElement('textarea'); commentTA.id = 'project-comment';
-    commentTA.placeholder = 'Any additional feedback for the students or instructor...';
-    commentTA.style.width = '100%'; commentTA.style.minHeight = '80px'; commentTA.style.padding = '8px'; commentTA.style.boxSizing = 'border-box';
+    // After rendering, attach radio toggle handlers to the newly created radios
+    if (typeof window.__attachRadioToggle === 'function') {
+      Array.prototype.forEach.call(matrixContainer.querySelectorAll("input[type='radio']"), function (r) { window.__attachRadioToggle(r); });
+    }
+  }
 
-    var stagedComment = stagedRatings[currentProject] && stagedRatings[currentProject]._comment;
-    if (stagedComment) commentTA.value = stagedComment;
+  // Render comment area (per-student & group)
+  function renderCommentSection(projectName, students) {
+    var oldComment = document.querySelector('.section.section-comment'); if (oldComment && oldComment.parentNode) oldComment.parentNode.removeChild(oldComment);
 
-    commentWrap.appendChild(commentLabel); commentWrap.appendChild(commentTA); commentSec.appendChild(commentWrap);
+    var commentSec = el('div', { class: 'section section-comment', style: { marginTop: '12px', display: 'block' } });
+    commentSec.appendChild(el('h3', { text: 'Add your additional comments', style: { margin: '0 0 12px 0', fontSize: '1rem', fontWeight: '700' } }));
+
+    var staged = (stagedRatings[projectName] && stagedRatings[projectName]._studentComments) || {};
+
+    students.forEach(function (studentName, sIdx) {
+      var wrapper = el('div', { class: 'student-comment-panel', style: { border: '1px solid rgba(10,12,30,0.05)', borderRadius: '8px', padding: '10px', marginBottom: '10px', background: '#fff' } });
+      var headerRow = el('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' } });
+      headerRow.appendChild(el('div', { text: studentName, style: { fontWeight: '600' } }));
+
+      var toggleBtn = el('button', { type: 'button', class: 'btn btn-mini comment-toggle', text: '▾ Add comment', style: { fontSize: '0.85rem', padding: '6px 8px', cursor: 'pointer', background: 'white', border: '1px solid rgba(10,12,30,0.06)', borderRadius: '6px' } });
+      headerRow.appendChild(toggleBtn); wrapper.appendChild(headerRow);
+
+      var content = el('div', { class: 'student-comment-content', style: { display: 'none' } });
+      content.appendChild(el('div', { text: 'Comments to be SHARED WITH THE STUDENT', style: { fontSize: '0.9rem', margin: '4px 0' } }));
+      var taPublic = el('textarea', { id: 'comment-public-' + sIdx, placeholder: 'Comments to share with student', style: { width: '100%', minHeight: '60px', padding: '8px', boxSizing: 'border-box', marginBottom: '8px' } });
+      content.appendChild(taPublic);
+      content.appendChild(el('div', { text: 'Comments to be SHARED ONLY WITH THE INSTRUCTOR', style: { fontSize: '0.9rem', margin: '4px 0' } }));
+      var taPrivate = el('textarea', { id: 'comment-private-' + sIdx, placeholder: 'Private comments for instructor', style: { width: '100%', minHeight: '60px', padding: '8px', boxSizing: 'border-box' } });
+      content.appendChild(taPrivate);
+
+      toggleBtn.addEventListener('click', function () {
+        if (content.style.display === 'none') { content.style.display = 'block'; toggleBtn.textContent = '▴ Hide comment'; } else { content.style.display = 'none'; toggleBtn.textContent = '▾ Add comment'; }
+      });
+
+      var st = staged && staged[studentName];
+      if (st) {
+        if (st.public) taPublic.value = st.public;
+        if (st.private) taPrivate.value = st.private;
+        if ((st.public && st.public.length) || (st.private && st.private.length)) { content.style.display = 'block'; toggleBtn.textContent = '▴ Hide comment'; }
+      }
+
+      wrapper.appendChild(content);
+      commentSec.appendChild(wrapper);
+    });
+
+    // Group panel
+    var groupWrap = el('div', { class: 'student-comment-panel', style: { border: '1px solid rgba(10,12,30,0.05)', borderRadius: '8px', padding: '10px', marginBottom: '10px', background: '#fff' } });
+    var groupHeader = el('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' } });
+    groupHeader.appendChild(el('div', { text: 'Comments for team overall', style: { fontWeight: '600' } }));
+    var groupToggle = el('button', { type: 'button', class: 'btn btn-mini comment-toggle', text: '▾ Add comment', style: { fontSize: '0.85rem', padding: '6px 8px', cursor: 'pointer', background: 'white', border: '1px solid rgba(10,12,30,0.06)', borderRadius: '6px' } });
+    groupHeader.appendChild(groupToggle); groupWrap.appendChild(groupHeader);
+    var groupContent = el('div', { style: { display: 'none' } });
+    groupContent.appendChild(el('div', { text: 'Comments for team overall (shared with student by default)', style: { margin: '4px 0' } }));
+    var taGroup = el('textarea', { id: 'comment-group-public', placeholder: 'Comments for team overall', style: { width: '100%', minHeight: '80px', padding: '8px', boxSizing: 'border-box' } });
+    groupContent.appendChild(taGroup);
+    groupContent.appendChild(el('div', { text: 'Private comments about the team (instructor only)', style: { margin: '8px 0 4px 0' } }));
+    var taGroupPrivate = el('textarea', { id: 'comment-group-private', placeholder: 'Private comments for instructor about the team', style: { width: '100%', minHeight: '60px', padding: '8px', boxSizing: 'border-box' } });
+    groupContent.appendChild(taGroupPrivate);
+
+    groupToggle.addEventListener('click', function () {
+      if (groupContent.style.display === 'none') { groupContent.style.display = 'block'; groupToggle.textContent = '▴ Hide comment'; } else { groupContent.style.display = 'none'; groupToggle.textContent = '▾ Add comment'; }
+    });
+
+    var stagedGroup = (stagedRatings[currentProject] && stagedRatings[currentProject]._groupComments) || {};
+    if (stagedGroup) {
+      if (stagedGroup.public) taGroup.value = stagedGroup.public;
+      if (stagedGroup.private) taGroupPrivate.value = stagedGroup.private;
+      if ((stagedGroup.public && stagedGroup.public.length) || (stagedGroup.private && stagedGroup.private.length)) { groupContent.style.display = 'block'; groupToggle.textContent = '▴ Hide comment'; }
+    }
+
+    groupWrap.appendChild(groupContent);
+    commentSec.appendChild(groupWrap);
 
     if (matrixContainer && matrixContainer.parentNode) {
       if (matrixContainer.nextSibling) matrixContainer.parentNode.insertBefore(commentSec, matrixContainer.nextSibling);
       else matrixContainer.parentNode.appendChild(commentSec);
-    } else {
-      document.body.appendChild(commentSec);
-    }
+    } else document.body.appendChild(commentSec);
+  }
 
-    // tidy up remaining placeholders
-    removeEmptyPlaceholderCards();
-
-    // Attach event listeners (avoid duplicates)
-    try {
-      matrixContainer.removeEventListener && matrixContainer.removeEventListener('change', saveDraftHandler);
-      matrixContainer.removeEventListener && matrixContainer.removeEventListener('input', saveDraftHandler);
-    } catch (e) {}
+  // Attach listeners for saves (debounced minimal)
+  function attachMatrixListeners() {
+    if (!matrixContainer) return;
+    // prevent double-binding by removing if possible
+    try { matrixContainer.removeEventListener && matrixContainer.removeEventListener('change', saveDraftHandler); matrixContainer.removeEventListener && matrixContainer.removeEventListener('input', saveDraftHandler); } catch (e) {}
     matrixContainer.addEventListener('change', saveDraftHandler);
     matrixContainer.addEventListener('input', saveDraftHandler);
 
-    try { commentTA.removeEventListener && commentTA.removeEventListener('input', saveDraftHandler); } catch (e) {}
-    commentTA.addEventListener('input', saveDraftHandler);
-
-    if (typeof updateSectionVisibility === 'function') updateSectionVisibility();
-    if (typeof removeEmptySections === 'function') removeEmptySections();
+    var commentSec = document.querySelector('.section.section-comment');
+    if (commentSec) {
+      Array.from(commentSec.querySelectorAll('textarea')).forEach(function (ta) {
+        try { ta.removeEventListener && ta.removeEventListener('input', saveDraftHandler); } catch (e) {}
+        ta.addEventListener('input', saveDraftHandler);
+      });
+    }
   }
 
-  // -------------------------
-  // Draft saving handler
-  // -------------------------
+  // Save draft: collect selected ratings + comments
   function saveDraftHandler() {
     if (!currentProject) return;
     if (!stagedRatings[currentProject]) stagedRatings[currentProject] = {};
-
     var students = sponsorProjects[currentProject] || [];
+
+    // student ratings
     for (var s = 0; s < students.length; s++) {
-      if (!stagedRatings[currentProject][s]) stagedRatings[currentProject][s] = {};
+      stagedRatings[currentProject][s] = stagedRatings[currentProject][s] || {};
       for (var c = 0; c < RUBRIC.length; c++) {
         var sel = document.querySelector('input[name="rating-' + c + '-' + s + '"]:checked');
         if (sel) stagedRatings[currentProject][s][c] = parseInt(sel.value, 10);
+        else if (stagedRatings[currentProject][s] && stagedRatings[currentProject][s][c] !== undefined) { /* keep */ }
+        else stagedRatings[currentProject][s][c] = null;
       }
     }
-    var ta = document.getElementById('project-comment');
-    if (ta) stagedRatings[currentProject]._comment = ta.value || '';
+
+    // team ratings
+    stagedRatings[currentProject].team = stagedRatings[currentProject].team || {};
+    for (var ct = 0; ct < RUBRIC.length; ct++) {
+      var selT = document.querySelector('input[name="rating-' + ct + '-team"]:checked');
+      if (selT) stagedRatings[currentProject].team[ct] = parseInt(selT.value, 10);
+      else if (stagedRatings[currentProject].team && stagedRatings[currentProject].team[ct] !== undefined) { /* keep */ }
+      else stagedRatings[currentProject].team[ct] = null;
+    }
+
+    // comments
+    stagedRatings[currentProject]._studentComments = stagedRatings[currentProject]._studentComments || {};
+    for (var i = 0; i < students.length; i++) {
+      var sName = students[i];
+      var pubEl = document.getElementById('comment-public-' + i);
+      var privEl = document.getElementById('comment-private-' + i);
+      stagedRatings[currentProject]._studentComments[sName] = stagedRatings[currentProject]._studentComments[sName] || { public: '', private: '' };
+      if (pubEl) stagedRatings[currentProject]._studentComments[sName].public = pubEl.value || '';
+      if (privEl) stagedRatings[currentProject]._studentComments[sName].private = privEl.value || '';
+    }
+
+    stagedRatings[currentProject]._groupComments = stagedRatings[currentProject]._groupComments || { public: '', private: '' };
+    var gpPub = document.getElementById('comment-group-public');
+    var gpPriv = document.getElementById('comment-group-private');
+    if (gpPub) stagedRatings[currentProject]._groupComments.public = gpPub.value || '';
+    if (gpPriv) stagedRatings[currentProject]._groupComments.private = gpPriv.value || '';
+
+    // legacy support
+    var legacyTa = document.getElementById('project-comment');
+    if (legacyTa && legacyTa.value) stagedRatings[currentProject]._comment = legacyTa.value;
 
     saveProgress();
   }
 
-  // -------------------------
-  // Submit current project (collect all criteria)
-  // -------------------------
+  // Build payload and submit current project
   function submitCurrentProject() {
     if (!currentProject) { setStatus('No project is loaded.', 'red'); return; }
     var students = sponsorProjects[currentProject] || [];
     if (!students.length) { setStatus('No students to submit.', 'red'); return; }
 
-    var rows = [];
+    var responses = [];
     for (var s = 0; s < students.length; s++) {
       var ratingsObj = {};
       for (var c = 0; c < RUBRIC.length; c++) {
         var sel = document.querySelector('input[name="rating-' + c + '-' + s + '"]:checked');
-        ratingsObj[RUBRIC[c].title] = sel ? parseInt(sel.value, 10) : null;
+        ratingsObj[RUBRIC[c].title || ('C' + c)] = sel ? parseInt(sel.value, 10) : null;
       }
-      var commentVal = '';
-      var taEl = document.getElementById('project-comment');
-      if (taEl) commentVal = taEl.value || '';
-      rows.push({ student: students[s], ratings: ratingsObj, comment: commentVal });
+      var commentShared = (document.getElementById('comment-public-' + s) || {}).value || '';
+      var commentInstructor = (document.getElementById('comment-private-' + s) || {}).value || '';
+      responses.push({ student: students[s], ratings: ratingsObj, commentShared: commentShared, commentInstructor: commentInstructor, isTeam: false });
     }
+
+    // team
+    var teamRatingsChosen = false;
+    var teamRatingsObj = {};
+    for (var tc = 0; tc < RUBRIC.length; tc++) {
+      var teamSel = document.querySelector('input[name="rating-' + tc + '-team"]:checked');
+      teamRatingsObj[RUBRIC[tc].title || ('C' + tc)] = teamSel ? parseInt(teamSel.value, 10) : null;
+      if (teamSel) teamRatingsChosen = true;
+    }
+    var groupCommentShared = (document.getElementById('comment-group-public') || {}).value || '';
+    var groupCommentInstructor = (document.getElementById('comment-group-private') || {}).value || '';
+    if (teamRatingsChosen || groupCommentShared || groupCommentInstructor) {
+      responses.push({ student: 'Evaluating group as a whole', ratings: teamRatingsObj, commentShared: groupCommentShared, commentInstructor: groupCommentInstructor, isTeam: true });
+    }
+
+    if (!responses.length) { setStatus('Nothing to submit.', 'red'); return; }
 
     var payload = {
       sponsorName: currentName || (nameInput ? nameInput.value.trim() : ''),
       sponsorEmail: currentEmail || (emailInput ? emailInput.value.trim() : ''),
       project: currentProject,
       rubric: RUBRIC.map(function (r) { return r.title; }),
-      responses: rows,
+      responses: responses,
       timestamp: new Date().toISOString()
     };
 
@@ -460,8 +500,7 @@
         return resp.text().then(function (txt) { throw new Error('Server error ' + resp.status + ': ' + txt); });
       }
       return resp.json().catch(function () { return {}; });
-    }).then(function (data) {
-      console.log('Saved', data);
+    }).then(function () {
       setStatus('Submission saved. Thank you!', 'green');
 
       completedProjects[currentProject] = true;
@@ -472,33 +511,21 @@
         var selector = 'li[data-project="' + CSS.escape(currentProject) + '"]';
         var li = projectListEl.querySelector(selector);
         if (li) {
-          li.classList.add('completed');
-          li.classList.remove('active');
+          li.classList.add('completed'); li.classList.remove('active');
           li.innerHTML = '<strong>' + escapeHtml(currentProject) + '</strong> <span class="meta">(completed)</span>';
         }
       }
 
       if (matrixContainer) matrixContainer.innerHTML = '';
-      var commentSection = document.querySelector('.section.section-comment');
-      if (commentSection) commentSection.parentNode.removeChild(commentSection);
-
-      var headerEl = document.querySelector('.current-project-header');
-      if (headerEl && headerEl.parentNode) headerEl.parentNode.removeChild(headerEl);
-
-      var matrixInfoBlock = document.getElementById('matrix-info');
-      if (matrixInfoBlock) matrixInfoBlock.style.display = 'none';
-
+      var commentSection = document.querySelector('.section.section-comment'); if (commentSection) commentSection.parentNode.removeChild(commentSection);
+      var headerEl = document.querySelector('.current-project-header'); if (headerEl && headerEl.parentNode) headerEl.parentNode.removeChild(headerEl);
+      var matrixInfoBlock = $('matrix-info'); if (matrixInfoBlock) matrixInfoBlock.style.display = 'none';
       currentProject = '';
-      if (typeof updateSectionVisibility === 'function') updateSectionVisibility();
-      if (typeof removeEmptySections === 'function') removeEmptySections();
-
       if (hasCompletedAllProjects()) showThankyouStage();
     }).catch(function (err) {
       console.error('Submission failed', err);
       setStatus('Submission failed. See console.', 'red');
-    }).finally(function () {
-      if (submitProjectBtn) submitProjectBtn.disabled = false;
-    });
+    }).finally(function () { if (submitProjectBtn) submitProjectBtn.disabled = false; });
   }
 
   function hasCompletedAllProjects() {
@@ -508,56 +535,38 @@
     return true;
   }
 
-  // -------------------------
-  // Event wiring
-  // -------------------------
+  // Identity submit
   function onIdentitySubmit() {
     var name = nameInput ? nameInput.value.trim() : '';
     var email = emailInput ? (emailInput.value || '').toLowerCase().trim() : '';
     if (!name) { setStatus('Please enter your name.', 'red'); return; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setStatus('Please enter a valid email.', 'red'); return; }
 
-    currentName = name;
-    currentEmail = email;
-    saveProgress();
-
+    currentName = name; currentEmail = email; saveProgress();
     if (!sponsorData || Object.keys(sponsorData).length === 0) {
       setStatus('Loading project data, please wait...', 'black');
       tryFetchData(function () {
-        if (!sponsorData || !sponsorData[currentEmail]) {
-          setStatus('No projects found for that email.', 'red');
-          return;
-        }
-        showProjectsStage();
-        populateProjectListFor(currentEmail);
+        if (!sponsorData || !sponsorData[currentEmail]) { setStatus('No projects found for that email.', 'red'); return; }
+        showProjectsStage(); populateProjectListFor(currentEmail);
       });
     } else {
-      if (!sponsorData[currentEmail]) {
-        setStatus('No projects found for that email.', 'red');
-        return;
-      }
-      showProjectsStage();
-      populateProjectListFor(currentEmail);
+      if (!sponsorData[currentEmail]) { setStatus('No projects found for that email.', 'red'); return; }
+      showProjectsStage(); populateProjectListFor(currentEmail);
     }
   }
 
+  // Event wiring
   if (identitySubmit) identitySubmit.addEventListener('click', onIdentitySubmit);
-  if (backToIdentity) backToIdentity.addEventListener('click', function () { showIdentityStage(); });
-  if (submitProjectBtn) submitProjectBtn.addEventListener('click', function () { submitCurrentProject(); });
+  if (backToIdentity) backToIdentity.addEventListener('click', showIdentityStage);
+  if (submitProjectBtn) submitProjectBtn.addEventListener('click', submitCurrentProject);
   if (finishStartOverBtn) finishStartOverBtn.addEventListener('click', function () {
-    completedProjects = {};
-    stagedRatings = {};
-    saveProgress();
-    currentProject = '';
+    completedProjects = {}; stagedRatings = {}; saveProgress(); currentProject = '';
     if (matrixContainer) matrixContainer.innerHTML = '';
-    var commentSection = document.querySelector('.section.section-comment');
-    if (commentSection) commentSection.parentNode.removeChild(commentSection);
+    var commentSection = document.querySelector('.section.section-comment'); if (commentSection) commentSection.parentNode.removeChild(commentSection);
     showIdentityStage();
   });
 
-  // -------------------------
   // Stage display helpers
-  // -------------------------
   function showIdentityStage() {
     if (stageIdentity) stageIdentity.style.display = '';
     if (stageProjects) stageProjects.style.display = 'none';
@@ -581,33 +590,20 @@
     if (underTitle) underTitle.style.display = 'none';
   }
 
-  // -------------------------
-  // Secure data fetch (replaces CSV)
-  // -------------------------
+  // Fetch sponsor data
   function tryFetchData(callback) {
     var loaderUrl = DATA_LOADER_URL;
-    if (DATA_SOURCE) {
-      loaderUrl += (loaderUrl.indexOf('?') === -1 ? '?source=' + encodeURIComponent(DATA_SOURCE) : '&source=' + encodeURIComponent(DATA_SOURCE));
-    }
     console.info('tryFetchData: requesting', loaderUrl);
-
     fetch(loaderUrl, { cache: 'no-store' })
       .then(function (r) {
-        console.info('tryFetchData: response status', r.status, r.statusText);
         if (!r.ok) throw new Error('Data loader returned ' + r.status);
         return r.json();
       })
       .then(function (rows) {
-        console.info('tryFetchData: rows received length=', Array.isArray(rows) ? rows.length : typeof rows);
         sponsorData = buildSponsorMap(rows || []);
-        window.__sponsorDebug && (window.__sponsorDebug.sponsorData = sponsorData);
-
         setStatus('Project data loaded securely.', 'green');
         loadProgress();
-        if (currentEmail && sponsorData[currentEmail]) {
-          showProjectsStage();
-          populateProjectListFor(currentEmail);
-        }
+        if (currentEmail && sponsorData[currentEmail]) { showProjectsStage(); populateProjectListFor(currentEmail); }
         if (typeof callback === 'function') callback();
       })
       .catch(function (err) {
@@ -617,24 +613,123 @@
       });
   }
 
-  // -------------------------
+  // UI cleanup on DOM ready
+  document.addEventListener('DOMContentLoaded', function () {
+    var autoFooter = document.querySelector('.site-footer-fixed'); if (autoFooter) autoFooter.parentNode.removeChild(autoFooter);
+    var identityStage = document.querySelector('[data-stage="identity"]') || $('stage-identity');
+    if (identityStage) {
+      Array.from(identityStage.querySelectorAll('button')).forEach(function (b) {
+        if (b.textContent && b.textContent.trim() === 'Submit ratings for project') b.style.display = 'none';
+      });
+    }
+  });
+
   // Boot
-  // -------------------------
   showIdentityStage();
   tryFetchData();
 
-  // Debug helper
-  window.__sponsorDebug = {
-    sponsorData: sponsorData,
-    stagedRatings: stagedRatings,
-    completedProjects: completedProjects,
-    reloadData: function (cb) { tryFetchData(cb); }
+  // Debug helpers
+  window.__sponsorDebug = { sponsorData: sponsorData, stagedRatings: stagedRatings, completedProjects: completedProjects, reloadData: tryFetchData };
+  window.__submitCurrentProject = submitCurrentProject;
+
+  // ---------------------------
+  // Single robust radio-toggle implementation
+  // ---------------------------
+  (function () {
+    // Helper: walk composedPath to find a radio input (works with label clicks and for="id" labels)
+    function findRadioFromEvent(e) {
+      var path = (e.composedPath && e.composedPath()) || e.path;
+      if (!path) {
+        // fallback: build a path
+        path = [];
+        var node = e.target;
+        while (node) { path.push(node); node = node.parentNode; }
+      }
+      for (var i = 0; i < path.length; i++) {
+        var n = path[i];
+        if (!n || !n.tagName) continue;
+        var tag = n.tagName.toLowerCase();
+        if (tag === 'input' && n.type === 'radio') return n;
+        if (tag === 'label') {
+          var q = n.querySelector && n.querySelector("input[type='radio']");
+          if (q) return q;
+          // label may reference input via for="" -> find by id
+          var forId = n.getAttribute && n.getAttribute('for');
+          if (forId) {
+            var byId = document.getElementById(forId);
+            if (byId && byId.type === 'radio') return byId;
+          }
+        }
+      }
+      return null;
+    }
+
+    // record checked state before browser toggles (pointerdown & touchstart)
+    document.addEventListener('pointerdown', function (e) {
+      try {
+        var radio = findRadioFromEvent(e);
+        if (!radio) return;
+        radio.dataset.waschecked = radio.checked ? 'true' : 'false';
+      } catch (err) { /* ignore */ }
+    }, false);
+
+    // for some older mobile browsers fallback to touchstart
+    document.addEventListener('touchstart', function (e) {
+      try {
+        var radio = findRadioFromEvent(e);
+        if (!radio) return;
+        radio.dataset.waschecked = radio.checked ? 'true' : 'false';
+      } catch (err) {}
+    }, { passive: true });
+
+    // keyboard activation: capture keydown so space/enter recorded before activation
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== ' ' && e.key !== 'Spacebar' && e.key !== 'Enter') return;
+      var active = document.activeElement;
+      if (!active) return;
+      if (active.tagName && active.tagName.toLowerCase() === 'input' && active.type === 'radio') {
+        active.dataset.waschecked = active.checked ? 'true' : 'false';
+      }
+    }, false);
+
+    // click: if it was checked before the interaction, uncheck it now and fire change
+    document.addEventListener('click', function (e) {
+      try {
+        var radio = findRadioFromEvent(e);
+        if (!radio) return;
+
+        // If it was checked before pointerdown/keydown, toggle off now
+        if (radio.dataset.waschecked === 'true') {
+          // Use microtask so this runs after browser default toggling when necessary
+          Promise.resolve().then(function () {
+            if (radio.checked) {
+              radio.checked = false;
+              radio.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            radio.removeAttribute('data-waschecked');
+          });
+          return;
+        }
+
+        // Not previously checked: update marker to current checked state for potential later toggle
+        radio.dataset.waschecked = radio.checked ? 'true' : 'false';
+      } catch (err) {
+        console.error('radio-toggle error', err);
+      }
+    }, false);
+  })();
+
+  // Expose a helper to attach toggles manually if needed (used in loadProjectIntoMatrix)
+  // This helper attaches a toggle marker function to a single radio element (idempotent)
+  window.__attachRadioToggle = function (radio) {
+    try {
+      if (!radio || radio.dataset.toggleAttached === '1') return;
+      radio.dataset.toggleAttached = '1';
+      // no-op: the global listeners handle toggle behavior; this exists in case you want to force a marker
+    } catch (e) { /* ignore */ }
   };
 
-  window.__submitCurrentProject = submitCurrentProject;
 })();
-
-
 
 
 
