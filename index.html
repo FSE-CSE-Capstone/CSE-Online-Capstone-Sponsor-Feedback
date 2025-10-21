@@ -35,21 +35,21 @@
       <section class="card" aria-labelledby="projects-heading-outside">
 
         <!-- STAGE 1: Identity (inputs; greeting/lead are outside and controlled separately) -->
-        <div id="stage-identity" class="stage">
-          <div class="form-row">
-            <label for="fullName">Your name</label>
-            <input id="fullName" name="fullName" type="text" placeholder="Jane Doe" />
-          </div>
+<div id="stage-identity" class="stage" data-stage="identity">
+  <div class="form-row">
+    <label for="fullName">Your name</label>
+    <input id="fullName" name="fullName" type="text" placeholder="Jane Doe" />
+  </div>
 
-          <div class="form-row">
-            <label for="email">Your email</label>
-            <input id="email" name="email" type="email" placeholder="you@example.com" />
-          </div>
+  <div class="form-row">
+    <label for="email">Your email</label>
+    <input id="email" name="email" type="email" placeholder="you@example.com" />
+  </div>
 
-          <div class="actions">
-            <button id="identitySubmit" class="btn btn-primary" type="button">Continue</button>
-          </div>
-        </div>
+  <div class="actions">
+    <button id="identitySubmit" class="btn btn-primary" type="button">Continue</button>
+  </div>
+</div>
 
         <!-- STAGE 2: Projects + Matrix (hidden initially) -->
         <div id="stage-projects" class="stage" style="display:none;">
@@ -61,19 +61,36 @@
     <div id="projects-instructions" class="projects-instructions" aria-live="polite">
       <p><strong>Please follow these steps to evaluate students:</strong></p>
       <ol>
-        <li>Select the project you are evaluating from the list.</li>
-        <li>For each student, choose the rating that best reflects their performance.</li>
-        <li>Use the comment box below to provide any additional feedback — this is optional but helpful.</li>
-        <li>When finished, click <strong>Submit ratings for project</strong>. Use <strong>Back</strong> to return to the previous screen if needed.</li>
+        <li><strong>Select the project </strong> you are evaluating from the list.</li>
+        <li><strong>Rate each student</strong> by choosing the option that best reflects their performance.</li>
+        <li><strong>Provide optional comments</strong> in the box below to share any additional feedback — this is encouraged but not required.</li>
+        <li>When finished, click <strong>Submit ratings for project</strong>. Use Back to return to the previous screen if needed.</li>
+        <li><strong>All reviews are due by December 1st.</strong></li>
       </ol>
+        <p><strong>If you prefer to provide general feedback for the team as a whole</strong>, complete <strong>only the last row</strong> of each rating matrix (labeled for “Team Overall”) instead of rating each student individually.</p>
+            <ul>
+              <li>1 - Far Below Expectations (Fail) = 50%</li>
+              <li>2 - Quite a Bit Below Expectations = 60%</li>
+              <li>3 - Somewhat Below Expectations = 70%</li>
+              <li>4 - Meets Expectations = 80%</li>
+              <li>5 - Somewhat Above Expectations = 90%</li>
+              <li>6 - Quite a Bit Above Expectations = 100%</li>
+              <li>7 - Exceeds Expectations (A+) = 110%</li>
+            </ul>
+            <p>Please reference this evaluation rubric: <a href="http://links.asu.edu/Sponsor_Rubric" target="_blank" rel="noopener">http://links.asu.edu/Sponsor_Rubric</a></p>
+          </div>
       
     </div>
   </div>
 
   <!-- Title and project list below the instructions card -->
-  <h3 id="projects-heading" class="section-title">Project List</h3>
-  <ul id="project-list" class="project-list" aria-live="polite"></ul>
-</div>
+  <!-- new wrapper -->
+<section class="project-list-card">
+  <h2>Project List</h2>
+  <div id="project-list">
+    <!-- project items inserted here by JS -->
+  </div>
+</section>
 
 
 
